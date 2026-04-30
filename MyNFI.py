@@ -22,13 +22,16 @@ class MyNFI(NostalgiaForInfinityX7):
   futures_mode_leverage_rebuy_mode = 5.0
   futures_mode_leverage_grind_mode = 5.0
 
-  # +30% take-profit on equity (leverage-adjusted to price below).
-  take_profit_pct = 0.30
+  # Take-profit and stop-loss expressed as equity-ratio (freqtrade convention).
+  # Effective price trigger = pct / leverage. At 5x leverage:
+  #   take_profit_pct = 0.50 → price moves +10% before TP fires
+  #   stoploss        = -0.60 → price moves -12% before SL fires
+  take_profit_pct = 0.50
 
-  # -40% hard stop. Delegated to freqtrade's stoploss_on_exchange — it places,
-  # tracks, and cancels the SL order automatically across DCA / restarts.
-  # (The TP at +30% is placed separately by _place_exchange_tp() below.)
-  stoploss = -0.40
+  # SL delegated to freqtrade's stoploss_on_exchange — it places, tracks, and
+  # cancels the SL order automatically across DCA / restarts.
+  # (TP is placed separately by _place_exchange_tp() below.)
+  stoploss = -0.60
   use_custom_stoploss = False
   order_types = {
     "entry": "limit",

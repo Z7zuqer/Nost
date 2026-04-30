@@ -10,11 +10,13 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 STRATEGY="${STRATEGY:-NostalgiaForInfinityX7}"
 EXCHANGE="${EXCHANGE:-binance}"
 PAIRLIST_FILE="${NFI_PAIRLIST_FILE:-pairlist-static-binance-futures-usdt.json}"
-UPSTREAM="https://raw.githubusercontent.com/iterativv/NostalgiaForInfinity/main"
+UPSTREAM_REPO="https://github.com/iterativv/NostalgiaForInfinity.git"
+UPSTREAM_RAW="https://raw.githubusercontent.com/iterativv/NostalgiaForInfinity/main"
 
 LOG_DIR="$REPO_DIR/user_data/logs"
 LOG_FILE="$LOG_DIR/nfi-update.log"
 LOCK_FILE="/tmp/nfi-host-update.lock"
+SHA_CACHE="$REPO_DIR/user_data/.upstream_nfi_head_sha"
 
 mkdir -p "$LOG_DIR"
 
@@ -33,16 +35,36 @@ if [ -f .env ]; then
   set -a; source .env; set +a
 fi
 
+# Cheap-first check: ask upstream for HEAD SHA via git ls-remote (1 small HTTP).
+# If it matches our cached SHA, no point downloading any files.
+upstream_sha=$(git ls-remote "$UPSTREAM_REPO" HEAD 2>/dev/null | awk '{print $1}' | head -1)
+if [ -z "$upstream_sha" ]; then
+  log "ERROR: failed to query upstream HEAD via git ls-remote — aborting (cache untouched)"
+  exit 0
+fi
+
+cached_sha=""
+[ -f "$SHA_CACHE" ] && cached_sha=$(cat "$SHA_CACHE" 2>/dev/null || echo "")
+
+if [ "$upstream_sha" = "$cached_sha" ]; then
+  log "No new upstream commits (HEAD ${upstream_sha:0:7})"
+  exit 0
+fi
+
+log "Upstream advanced ${cached_sha:0:7}..${upstream_sha:0:7} — checking files"
+
 CHANGED=0
 CHANGED_FILES=""
+DOWNLOAD_FAILED=0
 
 check_file() {
   local remote_path=$1
   local local_path=$2
   local tmp
   tmp=$(mktemp)
-  if ! curl -fsSL --max-time 30 -o "$tmp" "$UPSTREAM/$remote_path"; then
+  if ! curl -fsSL --max-time 30 -o "$tmp" "$UPSTREAM_RAW/$remote_path"; then
     log "ERROR: download failed for $remote_path"
+    DOWNLOAD_FAILED=1
     rm -f "$tmp"
     return
   fi
@@ -55,14 +77,17 @@ check_file() {
   rm -f "$tmp"
 }
 
-log "Checking upstream NFI for updates..."
-
 check_file "${STRATEGY}.py"                       "${STRATEGY}.py"
 check_file "configs/blacklist-${EXCHANGE}.json"   "configs/blacklist-${EXCHANGE}.json"
 check_file "configs/${PAIRLIST_FILE}"             "configs/${PAIRLIST_FILE}"
 
+# Only advance the cache if everything downloaded cleanly. Otherwise force retry next hour.
+if [ "$DOWNLOAD_FAILED" -eq 0 ]; then
+  echo "$upstream_sha" > "$SHA_CACHE"
+fi
+
 if [ "$CHANGED" -eq 0 ]; then
-  log "No updates."
+  log "Upstream had new commits but the 3 watched files are unchanged."
   exit 0
 fi
 

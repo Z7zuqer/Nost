@@ -12,6 +12,8 @@ x-common-settings:
     - "./user_data/data:/freqtrade/user_data/data"
     - "./configs:/freqtrade/configs"
     - "./${FREQTRADE__STRATEGY:-NostalgiaForInfinityX7}.py:/freqtrade/${FREQTRADE__STRATEGY:-NostalgiaForInfinityX7}.py"
+    # Parent class file — required when FREQTRADE__STRATEGY is a subclass (e.g. MyNFI)
+    - "./NostalgiaForInfinityX7.py:/freqtrade/NostalgiaForInfinityX7.py"
   healthcheck:
     test: ["CMD", "curl", "-f", "http://localhost:${FREQTRADE__API_SERVER__LISTEN_PORT:-8080}"]
     interval: 1m30s

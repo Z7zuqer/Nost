@@ -154,6 +154,7 @@ user_data/logs/*
 user_data/notebooks
 user_data/plot
 user_data/freqaimodels
+user_data/.upstream_nfi_head_sha
 artifacts/
 
 # Don't commit configs

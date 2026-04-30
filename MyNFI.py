@@ -16,6 +16,12 @@ class MyNFI(NostalgiaForInfinityX7):
   # Align with FREQTRADE__TRADING_MODE=futures in .env
   is_futures_mode = True
 
+  # 5x leverage across all modes (parent default: 3x). NFI.leverage() picks
+  # the rebuy/grind variant for those modes, so all three need to match.
+  futures_mode_leverage = 5.0
+  futures_mode_leverage_rebuy_mode = 5.0
+  futures_mode_leverage_grind_mode = 5.0
+
   # +30% take-profit on equity (leverage-adjusted to price below).
   take_profit_pct = 0.30
 

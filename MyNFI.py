@@ -62,7 +62,9 @@ class MyNFI(NostalgiaForInfinityX7):
       exit_reason, current_time, **kwargs,
     )
 
-  # One-time flag: cleanup orphan TPs from previous broken runs at first cycle
+  # First-cycle diagnostic: log what the API returns for each pair so we
+  # can debug why orphans aren't being detected. NO auto-cancellation,
+  # NO auto-placement — just observation.
   _startup_cleanup_done = False
 
   def bot_loop_start(self, current_time, **kwargs):
@@ -72,19 +74,20 @@ class MyNFI(NostalgiaForInfinityX7):
     try:
       from freqtrade.persistence import Trade
       open_trades = Trade.get_open_trades()
-      # First-cycle cleanup: cancel ALL exchange-side TPs and reset stored IDs.
-      # Existing trades from a prior run may have many orphan TPs accumulated.
+      # Once-per-process cleanup: cancel orphan conditional orders that aren't
+      # tracked by either freqtrade (SL) or this strategy (TP).
       if not self._startup_cleanup_done:
         for t in open_trades:
-          self._cleanup_all_pair_tps(t)
-          t.set_custom_data(key="tp_order_id", value="")
+          self._cleanup_orphan_conditional_orders(t)
         self._startup_cleanup_done = True
-      # Reconciliation: place one TP per trade that has no stored ID. Treat the
-      # literal string "null" as empty too — freqtrade locks cd_type at first
-      # write, so a later None gets serialized to the literal string "null".
+      # Reconciliation: only place TP if there is genuinely NO stored ID.
+      # Don't reset/wipe IDs on restart — trust prior placement. If stored ID
+      # exists but exchange cancelled it externally, user must manually re-place
+      # or clear DB. This prevents orphan accumulation across restarts.
       for t in open_trades:
         stored = t.get_custom_data(key="tp_order_id") or ""
         if not stored or stored == "null":
+          logger.info(f"[{t.pair}] no stored TP id — placing fresh")
           self._place_exchange_tp(t.pair, t)
     except Exception as e:
       logger.warning(f"TP reconciliation failed: {e}")
@@ -143,7 +146,8 @@ class MyNFI(NostalgiaForInfinityX7):
     if not order_id:
       return
     try:
-      self.dp._exchange._api.cancel_order(order_id, trade.pair)
+      # stop=True is required for binance futures conditional-order namespace
+      self.dp._exchange._api.cancel_order(order_id, trade.pair, params={"stop": True})
     except Exception as e:
       msg = str(e).lower()
       if any(x in msg for x in ("unknown order", "not found", "does not exist")):
@@ -154,18 +158,42 @@ class MyNFI(NostalgiaForInfinityX7):
     # a string ID first, a None value gets serialized as the literal string "null".
     trade.set_custom_data(key="tp_order_id", value="")
 
-  def _cleanup_all_pair_tps(self, trade):
-    """Nuke every open order on this pair (orphan recovery at startup).
+  def _cleanup_orphan_conditional_orders(self, trade):
+    """Cancel orphan TP/SL orders on this pair that aren't tracked by anyone.
 
-    Binance Futures' fetch_open_orders sometimes excludes stop/TP-type orders,
-    so a selective cancel can leave orphans behind. cancel_all_orders is the
-    only way to guarantee a clean slate. Side effects accepted:
-      - freqtrade's stoploss_on_exchange re-places SL within ~15s
-      - this strategy's order_filled / bot_loop_start re-places TP within ~5s
-      - any pending entry orders get re-issued by NFI's normal flow
+    On Binance Futures, conditional orders (stop / take-profit) live in a
+    separate API namespace from regular limit orders — fetch_open_orders
+    without params only returns regular orders, returning empty for stops.
+    Use params={"stop": True} to enumerate, and params={"stop": True} on
+    cancel_order to actually cancel them.
+
+    "Tracked" = freqtrade's stoploss_order_id (per trade) OR our tp_order_id
+    (per trade in custom_data). Anything else is an orphan and gets cancelled.
     """
+    api = self.dp._exchange._api
+    pair = trade.pair
+
     try:
-      result = self.dp._exchange._api.cancel_all_orders(trade.pair)
-      logger.info(f"Startup cleanup: cancel_all_orders({trade.pair}) → {result}")
+      stops = api.fetch_open_orders(pair, params={"stop": True})
     except Exception as e:
-      logger.warning(f"Startup cleanup failed for {trade.pair}: {e}")
+      logger.warning(f"Cleanup [{pair}]: fetch_open_orders failed: {e}")
+      return
+
+    tracked_tp = str(trade.get_custom_data(key="tp_order_id") or "")
+    sl_ids = {
+      str(o.order_id) for o in trade.orders
+      if o.ft_order_side == "stoploss" and o.ft_is_open
+    }
+    keep_ids = ({tracked_tp} | sl_ids) - {"", "null", "None"}
+
+    cancelled = 0
+    for o in stops:
+      oid = str(o.get("id"))
+      if oid in keep_ids:
+        continue
+      try:
+        api.cancel_order(oid, pair, params={"stop": True})
+        cancelled += 1
+      except Exception as e:
+        logger.warning(f"Cleanup [{pair}]: cancel orphan {oid} failed: {e}")
+    logger.info(f"Cleanup [{pair}]: kept {len(keep_ids)} tracked, cancelled {cancelled} orphan(s)")

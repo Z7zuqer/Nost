@@ -36,22 +36,13 @@ class AggressiveNFI(MyNFI):
   rapid_mode_stake_multiplier_futures = [1.0]
 
   # ---------------------------------------------------------------------------
-  # Shorts — NFI auto-sets self.can_short=True when trading_mode=futures.
-  # Parent only enables 3 short signals by default (501, 502, 542).
-  # Aggressive variant enables every short signal NFI ships with.
-  # Verified at NostalgiaForInfinityX7.py L23294 — populate_entry_trend
-  # iterates this dict and evaluates each enabled signal's logic.
+  # Shorts — DISABLED.
+  # Empty dict so populate_entry_trend's loop has nothing to evaluate.
+  # __init__ override below also flips can_short back to False after NFI
+  # auto-sets it (L991 sets True whenever trading_mode=futures).
   # ---------------------------------------------------------------------------
-  short_entry_signal_params = {
-    "short_entry_condition_501_enable": True,
-    "short_entry_condition_502_enable": True,
-    "short_entry_condition_503_enable": True,
-    "short_entry_condition_504_enable": True,
-    "short_entry_condition_541_enable": True,
-    "short_entry_condition_542_enable": True,
-    "short_entry_condition_543_enable": True,
-    "short_entry_condition_603_enable": True,
-    "short_entry_condition_641_enable": True,
-    "short_entry_condition_642_enable": True,
-    "short_entry_condition_661_enable": True,
-  }
+  short_entry_signal_params = {}
+
+  def __init__(self, config):
+    super().__init__(config)
+    self.can_short = False

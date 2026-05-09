@@ -15,22 +15,18 @@ class AggressiveNFI(MyNFI):
     return NostalgiaForInfinityX7.version(self) + "-aggressive"
 
   # ---------------------------------------------------------------------------
-  # Leverage — 20x across all modes (parent default 3x; was 10x)
+  # Leverage — 10x across all modes (parent default 3x)
   # ---------------------------------------------------------------------------
-  futures_mode_leverage = 20.0
-  futures_mode_leverage_rebuy_mode = 20.0
-  futures_mode_leverage_grind_mode = 20.0
+  futures_mode_leverage = 10.0
+  futures_mode_leverage_rebuy_mode = 10.0
+  futures_mode_leverage_grind_mode = 10.0
 
   # ---------------------------------------------------------------------------
-  # TP / SL — recalibrated for 20x leverage
+  # TP / SL — calibrated for 10x leverage
   # ---------------------------------------------------------------------------
-  # Effective price trigger = pct / leverage. At 20x:
-  #   take_profit_pct = 0.50 → price moves +2.5% before TP fires
-  #   stoploss        = -0.80 → price moves -4%   before SL fires
-  # WARNING: liquidation at 20x is around -5% price; SL at -4% leaves only
-  # ~1% buffer. Flash crashes can overshoot. Consider raising stoploss to
-  # -0.60 (-3% price, ~2% buffer) if you see SL frequently triggered just
-  # before reversal.
+  # Effective price trigger = pct / leverage. At 10x:
+  #   take_profit_pct = 0.50 → price moves +5% before TP fires
+  #   stoploss        = -0.80 → price moves -8% before SL fires (~2% buffer to liq)
   take_profit_pct = 0.50
   stoploss = -0.80
 
